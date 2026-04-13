@@ -4,53 +4,69 @@ from datetime import date
 import os
 
 # ==============================
-# KONFIGURASI AWAL
+# KONFIGURASI
 # ==============================
-st.set_page_config(page_title="Dashboard Absensi Interaktif", layout="wide")
+st.set_page_config(page_title="Dashboard Absensi + Excel", layout="wide")
 
-DATA_FILE = "absensi_db.csv"
-
-# ==============================
-# INIT DATABASE (CSV)
-# ==============================
-if not os.path.exists(DATA_FILE):
-    df_init = pd.DataFrame(columns=["Nama", "Tanggal", "Status"])
-    df_init.to_csv(DATA_FILE, index=False)
-
-
-def load_data():
-    return pd.read_csv(DATA_FILE, parse_dates=["Tanggal"])
-
-
-def save_data(df):
-    df.to_csv(DATA_FILE, index=False)
-
+DB_FILE = "absensi_db.csv"
+EXCEL_FILE = "ABSENSI_GURU_v4_fixed.xlsx"
 
 # ==============================
-# LOGIN SEDERHANA
+# INIT DATABASE
+# ==============================
+if not os.path.exists(DB_FILE):
+    pd.DataFrame(columns=["Nama", "Tanggal", "Status"]).to_csv(DB_FILE, index=False)
+
+
+def load_db():
+    return pd.read_csv(DB_FILE, parse_dates=["Tanggal"])
+
+
+def save_db(df):
+    df.to_csv(DB_FILE, index=False)
+
+
+# ==============================
+# LOAD DATA GURU DARI EXCEL
+# ==============================
+@st.cache_data
+def load_guru():
+    try:
+        df = pd.read_excel(EXCEL_FILE, sheet_name="DATA_GURU", header=None)
+        df = df.iloc[2:]
+        df.columns = ["No", "Nama", "Mapel", "X"]
+        return df["Nama"].dropna().tolist()
+    except:
+        return []
+
+
+# ==============================
+# LOGIN
 # ==============================
 st.sidebar.title("🔐 Login")
 role = st.sidebar.selectbox("Masuk sebagai", ["Admin", "User"])
 
 # ==============================
-# NAVIGASI
+# MENU
 # ==============================
 menu = st.sidebar.radio("Menu", [
     "📊 Dashboard",
     "📅 Data Absensi",
-    "✍️ Input Absensi"
+    "✍️ Input Absensi",
+    "⬇️ Export Excel"
 ])
 
 # ==============================
 # LOAD DATA
 # ==============================
-df = load_data()
+df = load_db()
+guru_list = load_guru()
 
 # ==============================
 # DASHBOARD
 # ==============================
 if menu == "📊 Dashboard":
-    st.title("📊 Dashboard Absensi Guru")
+    st.title("📊 Dashboard Absensi (Live Input)")
 
     if df.empty:
         st.warning("Belum ada data")
@@ -61,7 +77,7 @@ if menu == "📊 Dashboard":
         sakit = len(df[df["Status"] == "Sakit"])
 
         c1, c2, c3, c4 = st.columns(4)
-        c1.metric("Total Data", total)
+        c1.metric("Total", total)
         c2.metric("Mengajar", hadir)
         c3.metric("Izin", izin)
         c4.metric("Sakit", sakit)
@@ -82,11 +98,11 @@ elif menu == "📅 Data Absensi":
 
         if role == "Admin":
             st.subheader("🗑️ Hapus Data")
-            idx = st.number_input("Index data", min_value=0, max_value=len(df)-1, step=1)
+            idx = st.number_input("Index", 0, len(df)-1, 0)
 
             if st.button("Hapus"):
                 df = df.drop(index=idx)
-                save_data(df)
+                save_db(df)
                 st.success("Data dihapus")
                 st.rerun()
 
@@ -97,10 +113,10 @@ elif menu == "✍️ Input Absensi":
     st.title("✍️ Input Absensi")
 
     if role != "Admin":
-        st.error("Hanya admin yang bisa input data")
+        st.error("Hanya admin")
     else:
-        with st.form("form_input"):
-            nama = st.text_input("Nama Guru")
+        with st.form("form"):
+            nama = st.selectbox("Nama Guru", guru_list if guru_list else ["Manual"])
             tanggal = st.date_input("Tanggal", date.today())
             status = st.selectbox("Status", [
                 "Mengajar", "Sakit", "Izin", "Tanpa Keterangan"
@@ -109,20 +125,35 @@ elif menu == "✍️ Input Absensi":
             submit = st.form_submit_button("Simpan")
 
             if submit:
-                new_data = pd.DataFrame([{
+                new = pd.DataFrame([{
                     "Nama": nama,
                     "Tanggal": tanggal,
                     "Status": status
                 }])
 
-                df = pd.concat([df, new_data], ignore_index=True)
-                save_data(df)
+                df = pd.concat([df, new], ignore_index=True)
+                save_db(df)
 
-                st.success("Data berhasil disimpan")
+                st.success("Tersimpan")
                 st.rerun()
+
+# ==============================
+# EXPORT KE EXCEL
+# ==============================
+elif menu == "⬇️ Export Excel":
+    st.title("⬇️ Export ke Excel")
+
+    if df.empty:
+        st.warning("Tidak ada data")
+    else:
+        file_name = "absensi_export.xlsx"
+        df.to_excel(file_name, index=False)
+
+        with open(file_name, "rb") as f:
+            st.download_button("Download Excel", f, file_name=file_name)
 
 # ==============================
 # FOOTER
 # ==============================
 st.sidebar.markdown("---")
-st.sidebar.caption("Dashboard Absensi v2 (Interaktif)")
+st.sidebar.caption("Versi Interaktif + Excel")
